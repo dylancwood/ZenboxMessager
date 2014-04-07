@@ -1,0 +1,46 @@
+/**
+ * Insert all the lines of this file (except these comments)
+ * into the custom CSS of your Zendesk Feedback tab(s).
+ * Be sure to update the e.origin comparisons iside of the 
+ * onmessage() function to reference your own domains.
+ */
+
+</style>
+<script type="text/javascript">
+    var onMessage = function(e) { 
+        if (e.source === parent &&
+            (e.origin === "https://mywebsite.com" ||
+            e.orign === "http://mywebsite.com")) {
+            insertValuesFromMessage(e.data);
+            returnMessage(e.origin);
+        };
+    }; 
+
+    var insertValuesFromMessage = function (data) {
+        var key, value;     
+        if(typeof data == 'string') {
+            data = JSON.parse(data);
+             for (key in data) {
+                 if (data.hasOwnProperty(key)) {
+                     value = decodeURIComponent(data[key]);
+                      if(document.getElementById(key)) {
+                          document.getElementById(key).value = value;
+                      }
+                 }
+             }
+         }
+    };
+
+    var returnMessage = function(origin) {
+        parent.postMessage('received', origin);
+    };
+
+    // Create IE + others compatible event handler
+    var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
+    var eventer = window[eventMethod];
+    var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
+
+    // Listen to message from child window
+    eventer(messageEvent, onMessage, false);
+</script>
+<style>
