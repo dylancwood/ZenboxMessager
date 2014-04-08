@@ -1,6 +1,60 @@
 (function(ZenboxMessager, undefined) {
     'use strict';
     /**
+     * Messager prototype sets up a messager that can send messages to a specific
+     * window and origin, and receive messages from the same window and origin.
+     * This little prototype uses the classic CS terms of Alice and Bob. In this
+     * case, Bob is the recipient of the message, and Alice is the messaging 
+     * application/client.
+     */
+
+    /*
+     * Messager Prototype constructor
+     * @param {object|Window} bobsWindow The window or frame to send messages to
+     * @param {string} bobsOrigin The origin (src domain) of bobsWindow.
+     */
+    var Messager = function(bobsWindow, bobsOrigin){
+        var alice = this;
+        this.bobsWindow = bobsWindow;
+        this.bobsOrigin = bobsOrigin;
+    };
+
+    /**
+     * Set up listener to mark message read when Zendesk window posts message
+     * @param {function} callbackFn A callback to be executed when a message is
+     * received
+     * @return {Messager}
+     */
+    Messager.prototype.listen = function(callbackFn) {
+        // This looks more complicated than it is in order to support older 
+        // browsers
+        // Create IE + others compatible event handler
+        var alice = this;
+        var eventMethod =
+            window.addEventListener ? "addEventListener" : "attachEvent";
+        var eventer = window[eventMethod];
+        var messageEvent = eventMethod === "attachEvent" ? "onmessage" : "message";
+
+        // Listen to message from bob
+        eventer(messageEvent, function(e) {
+            if (e.source === alice.bobsWindow &&
+                e.origin === alice.bobsOrigin) {
+                callbackFn(e);
+            }
+        }, false);
+        
+        return alice;
+    };
+
+    /**
+     * Protected static function to send a message to the zendesk iframe
+     * @param {string} message The message to be sent to Bob.
+     */
+    Messager.prototype.send = function(message) {
+        return this.bobsWindow.postMessage(message, this.bobsOrigin);
+    };
+
+    /**
      *
      * ZenboxMessager object to send messages to Zendesk popup iframe
      * in order to pre-populate fields about user and application state
@@ -9,23 +63,6 @@
      * input in the Feedback Tab configuration.
      */
 
-    /**
-     * Add an event that will trigger this to nag the zendesk window
-     * This should be assigned to all elements and events that result
-     * in the Zendesk Feedback Window being opened.
-     * @param {object} element The HTML element to listen to
-     * @param {string} eventType The name of the event to listen for
-     * (e.g. "click")
-     * @return {ZenboxMessager}
-     */
-    ZenboxMessager.addMessageEvent = function(element, eventType) {
-        var _this = this;
-        element.addEventListener(eventType, function() {
-            _this.setMessageFromDataPointer().nag();
-        });
-
-        return this;
-    };
     /**
      * Initialize object with information about zendesk and app
      * @param {string} zendeskURL The URL of the Zendesk sub-site for which
@@ -36,15 +73,18 @@
      * @return {ZenboxMessager}
      */
     ZenboxMessager.init = function(zendeskURL, dataPointer) {
+        var messager;
         this.recipientWindow = (
             window.frames.zenbox_body.contentWindow ||
             window.frames.zenbox_body.window ||
             window.frames.zenbox_body
         );
+        this.messager = new Messager(this.recipientWindow, zendeskURL);
         this.message = '';
         this.messageReceived = false;
         this.zendeskURL = zendeskURL;
         this.dataPointer = dataPointer;
+        this.listenForReadySignal();
         this.listenForReceivedSignal();
 
         return this;
@@ -55,35 +95,37 @@
      * @return {ZenboxMessager}
      */
     ZenboxMessager.listenForReceivedSignal = function() {
-        // This looks more complicated than it is in order to support older 
-        // browsers
-        // Create IE + others compatible event handler
         var _this = this;
-        var eventMethod =
-            window.addEventListener ? "addEventListener" : "attachEvent";
-        var eventer = window[eventMethod];
-        var messageEvent = eventMethod === "attachEvent" ? "onmessage" : "message";
-
-        // Listen to message from child window
-        eventer(messageEvent, function(e) {
-            if (e.source === _this.recipientWindow &&
-                e.origin === _this.zendeskURL &&
-                e.data === 'received') {
+        this.messager.listen(function stopNagWhenReceived (messageEvent) {
+            if(messageEvent.data === 'ZenboxReceived') {
                 _this.markAsReceived();
-            } /*else {
-                // this is probably not error-worthy, but we don't want to
-                // take any action on a message from an unknown frame
-                // uncommenting the line below may be useful for debugging
-                // throw new Error ("Unknown message received: " + e.data);
-            }*/
-        }, false);
+            }
+        });
+       
+        return this;
+    };
+
+    /**
+     * Set up listener to send data when Zendesk Iframe is ready
+     * @return {ZenboxMessager}
+     */
+    ZenboxMessager.listenForReadySignal = function() {
+        var _this = this;
+        this.messager.listen(function sendWhenReady (messageEvent) {
+            if(messageEvent.data === 'ZenboxReady') {
+                _this.setMessageFromDataPointer();
+                _this.messager.send(_this.message);
+            }
+        });
+        
+        return this;
     };
 
     /**
      * Mark that the message has been received: will stop the nag function
      * @return {ZenboxMessager}
      */
-    ZenboxMessager.markAsReceived = function() {
+    ZenboxMessager.markAsReceived = function(response) {
         this.messageReceived = true;
 
         return this;
@@ -93,6 +135,9 @@
      *
      * Public method to continuously send messages in ~1/4 second intervals
      * until the recipientWindow replies with a 'received' message.
+     * It may not be necessary to manually nag the recipient Window: It appears
+     * that the postMessage API handles this by persistently sending to a valid
+     * recipient window until a response is head.
      * @return {ZenboxMessager}
      */
     ZenboxMessager.nag = function() {
@@ -101,17 +146,10 @@
             window.setTimeout(function() {
                 _this.nag.apply(_this);
             }, 250);
-            this.send(this.recipientWindow, this.message, this.zendeskURL);
+            this.messager.send(this.message);
         }
 
         return this;
-    };
-
-    /**
-     * Protected static function to send a message to the zendesk iframe
-     */
-    ZenboxMessager.send = function() {
-        this.recipientWindow.postMessage(this.message, this.zendeskURL);
     };
 
     /**
@@ -163,3 +201,4 @@
         this.messageReceived = false;
     };
 })(window.ZenboxMessager = window.ZenboxMessager || {});
+

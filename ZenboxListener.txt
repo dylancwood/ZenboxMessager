@@ -4,43 +4,179 @@
  * Be sure to update the e.origin comparisons iside of the 
  * onmessage() function to reference your own domains.
  */
-
 </style>
 <script type="text/javascript">
-    var onMessage = function(e) { 
-        if (e.source === parent &&
-            (e.origin === "https://mywebsite.com" ||
-            e.orign === "http://mywebsite.com")) {
-            insertValuesFromMessage(e.data);
-            returnMessage(e.origin);
-        };
-    }; 
+    (function(undefined) {
+        'use strict';
+        /**
+         * Messager prototype sets up a messager that can send messages to a specific
+         * window and origin, and receive messages from the same window and origin.
+         * This little prototype uses the classic CS terms of Alice and Bob. In this
+         * case, Bob is the recipient of the message, and Alice is the messaging
+         * application/client.
+         */
 
-    var insertValuesFromMessage = function (data) {
-        var key, value;     
-        if(typeof data == 'string') {
-            data = JSON.parse(data);
-             for (key in data) {
-                 if (data.hasOwnProperty(key)) {
-                     value = decodeURIComponent(data[key]);
-                      if(document.getElementById(key)) {
-                          document.getElementById(key).value = value;
-                      }
+        /*
+         * Messager Prototype constructor
+         * @param {object|Window} bobsWindow The window or frame to send messages to
+         * @param {string} bobsOrigin The origin (src domain) of bobsWindow.
+         */
+        var Messager = function(bobsWindow, bobsOrigin){
+            this.bobsWindow = bobsWindow;
+            this.bobsOrigin = bobsOrigin;
+        };
+
+        /**
+         * Set up listener to mark message read when Zendesk window posts message
+         * @param {function} callbackFn A callback to be executed when a message is
+         * received
+         * @return {Messager}
+         */
+        Messager.prototype.listen = function(callbackFn) {
+            // This looks more complicated than it is in order to support older
+            // browsers
+            // Create IE + others compatible event handler
+            var alice = this;
+            var eventMethod =
+                window.addEventListener ? "addEventListener" : "attachEvent";
+            var eventer = window[eventMethod];
+            var messageEvent = eventMethod === "attachEvent" ? "onmessage" : "message";
+
+            // Listen to message from bob
+            eventer(messageEvent, function(e) {
+                if (e.source === alice.bobsWindow &&
+                    e.origin === alice.bobsOrigin) {
+                    callbackFn(e);
+                }
+            }, false);
+
+            return alice;
+        };
+
+        /**
+         * Protected static function to send a message to the zendesk iframe
+         * @param {string} message The message to be sent to Bob.
+         */
+        Messager.prototype.send = function(message) {
+            return this.bobsWindow.postMessage(message, this.bobsOrigin);
+        };
+
+        /**
+         * Initialize the ZenboxListener with all the URLs for the app that will
+         * use this Zendesk feedback tab.
+         * @param {array} appURLs An array of strings
+         * (e.g. ['https://myapp.com', 'http://myapp.com']
+         */
+        var ZenboxListener = {};
+        ZenboxListener.init = function(appURLs) {
+            var _this = this;
+            this.parentWindow = parent;
+            this.appURLs = appURLs;
+            this.messagers = appURLs.map(function(appURL) {
+                return new Messager(_this.parentWindow, appURL);
+            });
+            this.listenForCustomData();
+            this.sendReadyMessage();
+
+            return this;
+        };
+
+        /**
+         * Send a message through all messagers (all urls)
+         * @param {string} message The message to be sent
+         */
+        ZenboxListener.sendViaAllMessagers = function(message) {
+            return this.messagers.forEach(function(messager) {
+                return messager.send(message);
+            });
+        };
+
+        /**
+         * Filter messagers so that only the messager that matches is maintained
+         * @param {string} desiredMessagerOrigin The oigin of the messager to be preserved
+         * @return {ZenboxListener}
+         */
+      ZenboxListener.filterMessagers = function(desiredMessagerOrigin) {
+            this.messagers = this.messagers.filter(
+                function findMessagerByOrigin(messager) {
+                    return messager.bobsOrigin === desiredMessagerOrigin;
+                }
+            );
+            if (!this.messagers.length) {
+                throw new Error(
+                    'None of the Messagers have origin "' +
+                        desiredMessagerOrigin + '"'
+                );
+            }
+            return this;
+        };
+
+        /**
+         * Listen to all messagers
+         * @param {function} callbackFn A function to be executed when a message
+         * is received
+         */
+        ZenboxListener.listenToAllMessagers = function(callbackFn) {
+            return this.messagers.forEach(function(messager) {
+                return messager.listen(callbackFn);
+            });
+            return;
+        };
+
+        /**
+         * Send the message that the Zenbox is ready to receive data
+         */
+        ZenboxListener.sendReadyMessage = function() {
+            this.sendViaAllMessagers('ZenboxReady');
+            return;
+        };
+
+        /**
+         * Send the message that the Zenbox has received and procecessed the data
+         */
+        ZenboxListener.sendReceivedMessage = function() {
+            this.sendViaAllMessagers('ZenboxReceived');
+            return;
+        };
+
+        /**
+         * Listen for data from parent page
+         */
+        ZenboxListener.listenForCustomData = function() {
+            var _this = this;
+            this.listenToAllMessagers(function(messageEvent) {
+                _this.insertValuesFromMessage(messageEvent.data);
+                // now that we know which origin is responding,
+                // filter list of messagers so that we don't send messages
+                // to other origins unnecessarily
+                _this.filterMessagers(messageEvent.origin);
+                _this.sendReceivedMessage();
+                return;
+            });
+            return;
+        };
+
+        /**
+         * Insert values from the data provided by the app into the form
+         * fields
+         */
+        ZenboxListener.insertValuesFromMessage = function (data) {
+            var key, value;
+            if(typeof data == 'string') {
+                data = JSON.parse(data);
+                 for (key in data) {
+                     if (data.hasOwnProperty(key)) {
+                         value = decodeURIComponent(data[key]);
+                          if(document.getElementById(key)) {
+                              document.getElementById(key).value = value;
+                          }
+                     }
                  }
              }
-         }
-    };
+        };
 
-    var returnMessage = function(origin) {
-        parent.postMessage('received', origin);
-    };
-
-    // Create IE + others compatible event handler
-    var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
-    var eventer = window[eventMethod];
-    var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
-
-    // Listen to message from child window
-    eventer(messageEvent, onMessage, false);
+        ZenboxListener.init(['*', 'http://localhost']);
+    })();
 </script>
 <style>
+
