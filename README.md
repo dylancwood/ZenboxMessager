@@ -6,16 +6,25 @@ JS Utilities to pre-populate custom fields in Zendesk Feedback Tab popup and Tic
 **Background**
 Zendesk provides an awesome service and interface. Among its features is a feedback tab that that can sit on every page of your site. When a user clicks on the tab, a modal popup magically appears that allows the user to submit a ticket or seach your knowledge base (more info on the feedback tab here: https://support.zendesk.com/entries/20990726-Setting-up-your-Feedback-Tab-channel)
 
-It is possible to dynamically pass a *customer name* and *email address* to the Zendesk popup (called the Zenbox) using the native Zendesk tools, however, any custom fields cannot dynamically populated using the Zendesk API. Based on some hints on the Zendesk forums, I wrote this little utility that should allow others to easily populate the custom fields of the Zendesk Feedback Channel. 
+It is possible to dynamically pass a *customer name* and *email address* to the Zendesk popup (called the Zenbox) using the native Zendesk API, however, any custom fields cannot be dynamically populated using the Zendesk API. Based on some hints on the Zendesk forums, I wrote this little utility that should allow everyone to easily populate the custom fields of the Zendesk Feedback Channel. 
+
+**Example**
+www.calculatatore.com (made up) is a website that allows users to perform simple math. In order to use the website, users must register and log in. The website uses a Zendesk feedback tab to allow users to submit tickets when they encounter problems with the website. When a ticket is submitted via the feedback tab, it would be very helpful for the engineers who are responding to the ticket to have the following information:
+
+1. What is the username of the person who is logged in
+2. What equation is currently being processed on the website (stored as a JS variable).
+
+To accomodate this, calculatatore.com's staff create a Zendesk feedback tab with custom fields for *username* and *current_equation*. They could ask the user to enter this information, but the user may not want to in order to save time, or they may lie about it. So, they would like to automatically populate the username and current_equation fields without any user intervention. ZenboxMessager is a utility that allows them to do that. 
 
 **Basic concept**
 The utility uses the native Javascript postMessage() API to send messages across windows from different domains without violating the same origin policy. In order for this to work, you must serve the ZenboxMessager.js script from your domain, and paste the ZenboxListener code inside the CSS of your Zendesk Feedback tab. *Note: This is technically Javascript injection, and it is usually frowned upon. Zendesk may decide to strip script tags from the custom CSS at some point, and this will no longer work... Hopefully they provide warning to us, and a reasonable workaround (like a custom JS field, or native support for custom fields in their API!)*
 
-**Use**
+**Use** To auto-populate fields using ZenboxMessager, do the following:
+
 1. Inlcude the ZenboxMessager.js script in the head or body of each page that uses the Zendesk Feedback Tab: 
-'''html
+``
 <script type="text/javascript" src="js/ZenboxMessager/ZenboxMessager.js"></script>
-'''
+``
 2. Copy the entire text from ZenboxListener.txt into the custom CSS field of your Feedback Tab (it can go before or after your custom CSS).
 3. Immediately after you call Zenbox.init, initialize the ZenboxMessager as well (you can place the ZenboxMessager init call inside the same script tag that is provided by Zendesk):
 ```html
